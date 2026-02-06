@@ -37,7 +37,7 @@ docker run --rm -e BOT_TOKEN=xxx -e OWNER_ID=123 echo-info-bot
 ```bash
 docker compose up --build -d
 ```
-`docker-compose.yml` использует `.env` и настроен на автоперезапуск (`restart: unless-stopped`).
+`docker-compose.yml` читает переменные из окружения (`BOT_TOKEN`, `OWNER_ID`), поэтому в Portainer можно задать их вручную при деплое. Локально можно передать их через `.env` или `export BOT_TOKEN=...`.
 
 ## Поведение при ошибках
 - Любое необработанное исключение логируется.
