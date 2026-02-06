@@ -147,6 +147,7 @@ async def build_chat_info(
     chat_id: int,
     thread_id: Optional[int] = None,
     is_topic_message: bool = False,
+    message: Optional[Message] = None,
 ) -> str:
     chat = await bot.get_chat(chat_id)
     member_count = await safe_get_member_count(bot, chat_id)
@@ -194,7 +195,7 @@ async def build_chat_info(
 
     if chat.is_forum:
         if is_topic_message and thread_id:
-            topic_info = await fetch_topic_info(bot, chat_id, thread_id)
+            topic_info = await fetch_topic_info(bot, chat_id, thread_id, message)
             lines.extend(topic_info)
         else:
             lines.append(
@@ -205,27 +206,46 @@ async def build_chat_info(
     return "\n".join(lines)
 
 
-async def fetch_topic_info(bot: Bot, chat_id: int, thread_id: int) -> list[str]:
+async def fetch_topic_info(
+    bot: Bot,
+    chat_id: int,
+    thread_id: int,
+    message: Optional[Message] = None,
+) -> list[str]:
     """Fetch and format info about a single forum topic.
 
     Bot API не позволяет получить список всех топиков, поэтому берем данные
     по thread_id той ветки, где вызвали команду.
     """
 
-    try:
-        topic = await bot.get_forum_topic(chat_id=chat_id, message_thread_id=thread_id)
-    except TelegramAPIError:
-        logger.info("Не удалось получить данные топика", exc_info=True)
+    topic_data = None
+
+    # aiogram 3.4.1 не имеет get_forum_topic, а низкоуровневый вызов требует
+    # TelegramMethod объекта. Чтобы не падать, используем только данные из сообщения.
+    if message and message.reply_to_message:
+        created = message.reply_to_message.forum_topic_created
+        if created:
+            topic_data = {
+                "name": created.name,
+                "icon_color": created.icon_color,
+                "icon_custom_emoji_id": getattr(created, "icon_custom_emoji_id", None),
+            }
+
+    if topic_data is None:
         return [f"Топик id {thread_id}: не удалось загрузить детали"]
 
+    name = topic_data.get("name")
+    icon_color = topic_data.get("icon_color")
+    icon_emoji = topic_data.get("icon_custom_emoji_id")
+
     info = [
-        f"Топик: {topic.name}",
-        f"Thread ID: {topic.message_thread_id}",
+        f"Топик: {name or 'без имени'}",
+        f"Thread ID: {thread_id}",
     ]
-    if getattr(topic, "icon_color", None):
-        info.append(f"Цвет иконки: {topic.icon_color}")
-    if getattr(topic, "icon_custom_emoji_id", None):
-        info.append(f"Emoji иконки: {topic.icon_custom_emoji_id}")
+    if icon_color is not None:
+        info.append(f"Цвет иконки: {icon_color}")
+    if icon_emoji:
+        info.append(f"Emoji иконки: {icon_emoji}")
     return info
 
 
@@ -303,6 +323,7 @@ async def info_group(message: Message, bot: Bot) -> None:
         chat_id=message.chat.id,
         thread_id=message.message_thread_id,
         is_topic_message=bool(message.is_topic_message),
+        message=message,
     )
     await message.answer(text)
 
@@ -329,6 +350,7 @@ async def main() -> None:
         F.chat.type.in_({ChatType.GROUP, ChatType.SUPERGROUP}),
     )
     dp.message.register(info_channel, Command("info"), F.chat.type == ChatType.CHANNEL)
+    dp.channel_post.register(info_channel, Command("info"))  # команды из постов канала
     dp.errors.register(handle_error)
 
     await bot.delete_webhook(drop_pending_updates=True)
