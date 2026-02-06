@@ -1,0 +1,10 @@
+version: "3.9"
+
+services:
+  bot:
+    build: .
+    container_name: echo-info-bot
+    env_file:
+      - .env
+    restart: unless-stopped
+    command: python bot.py
