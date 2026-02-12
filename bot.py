@@ -122,6 +122,23 @@ def format_permissions(chat: Chat) -> str:
     return "Разрешения по умолчанию: " + ", ".join(allowed)
 
 
+def extract_custom_emoji_ids(message: Message) -> list[str]:
+    entities = []
+    if message.entities:
+        entities.extend(message.entities)
+    if message.caption_entities:
+        entities.extend(message.caption_entities)
+
+    ids: list[str] = []
+    for entity in entities:
+        entity_type = getattr(entity.type, "value", entity.type)
+        if entity_type == "custom_emoji":
+            custom_id = getattr(entity, "custom_emoji_id", None)
+            if custom_id:
+                ids.append(custom_id)
+    return ids
+
+
 async def safe_get_member_count(bot: Bot, chat_id: int) -> Optional[int]:
     try:
         return await bot.get_chat_member_count(chat_id)
@@ -302,6 +319,7 @@ async def start_private(message: Message) -> None:
         "Привет! Я вывожу информацию о пользователях, группах и каналах.\n\n"
         "/start — эта подсказка.\n"
         "/info — показать все, что бот знает о тебе в личке.\n\n"
+        "Отправь кастомную emoji из Premium-набора в личку — верну ее ID.\n\n"
         "Если добавить меня в группу, супер-группу или канал, отправьте /info —"
         " я верну максимум сведений о чате. В форумах команду лучше писать внутри"
         " конкретного топика, чтобы показать его thread_id."
@@ -333,6 +351,19 @@ async def info_channel(message: Message, bot: Bot) -> None:
     await message.answer(text)
 
 
+async def custom_emoji_id_private(message: Message) -> None:
+    ids = extract_custom_emoji_ids(message)
+    if not ids:
+        return
+
+    unique_ids = list(dict.fromkeys(ids))
+    if len(unique_ids) == 1:
+        text = f"ID кастомной emoji: {unique_ids[0]}"
+    else:
+        text = "ID кастомных emoji:\n" + "\n".join(unique_ids)
+    await message.answer(text)
+
+
 async def main() -> None:
     token = os.getenv("BOT_TOKEN")
     if not token:
@@ -344,6 +375,7 @@ async def main() -> None:
     # Register handlers
     dp.message.register(start_private, CommandStart(), F.chat.type == ChatType.PRIVATE)
     dp.message.register(info_private, Command("info"), F.chat.type == ChatType.PRIVATE)
+    dp.message.register(custom_emoji_id_private, F.chat.type == ChatType.PRIVATE)
     dp.message.register(
         info_group,
         Command("info"),
